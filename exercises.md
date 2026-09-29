@@ -6,7 +6,7 @@
 > Cách trả lời: thay dòng `> *Câu trả lời của bạn*` bằng câu trả lời.
 > `grade.py` đếm số câu đã trả lời (15 điểm cho 10 câu).
 >
-> Họ và tên: ..........................  Mã học viên: ..........................
+> Họ và tên: Trần Công Thiện  Mã học viên: 2A202602579
 
 ---
 
@@ -34,7 +34,6 @@ không làm được.
 ---
 
 ### Câu 3 — Kích thước image (CP2)
-
 Build cả hai phiên bản và ghi lại số đo thật:
 
 ```bash
@@ -42,7 +41,6 @@ docker build -f <Dockerfile-1-stage> -t agent:single .
 docker build -t agent:multi .
 docker images | grep agent
 ```
-
 | Bản | Dung lượng |
 |-----|-----------|
 | 1 stage (bản đầu) | ~1000 MB |
