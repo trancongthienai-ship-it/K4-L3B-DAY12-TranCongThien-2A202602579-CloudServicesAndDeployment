@@ -16,7 +16,7 @@ Trong `Settings`, `agent_api_key` không có giá trị mặc định nên app c
 khi khởi động nếu thiếu biến môi trường. Hãy mô tả một tình huống cụ thể mà
 việc "chết sớm" này cứu bạn, so với việc để mặc định `"changeme"`.
 
-> *Câu trả lời của bạn*
+> Nếu để mặc định là `"changeme"`, ứng dụng sẽ âm thầm khởi động và chạy bình thường mà bạn không hề hay biết mình đang dùng một API key yếu. Kẻ xấu có thể dễ dàng đoán ra `"changeme"`, gọi API của bạn và đốt sạch hạn mức tiền của bạn ở OpenAI. Việc "chết sớm" (fail-fast) ngay lập tức ép bạn phải khai báo key đàng hoàng trước khi ứng dụng kịp lên sóng, ngăn chặn nguy cơ bảo mật từ trong trứng nước.
 
 ---
 
@@ -26,7 +26,10 @@ Chạy service và gọi `/ask` vài lần. Dán một dòng log JSON bạn thu 
 nêu **hai** việc bạn làm được với dòng log đó mà `print("đã trả lời xong")`
 không làm được.
 
-> *Câu trả lời của bạn*
+> Dòng log JSON: `{"level": "INFO", "event": "ask_completed", "user_id": "sv-test", "tokens_in": 3, "tokens_out": 35, "cost_usd": 2.145e-05, "timestamp": "2026-09-29T04:11:18Z"}`
+> Hai việc làm được:
+> 1. Đẩy log vào các hệ thống quản lý như ELK, Datadog để tự động vẽ biểu đồ thống kê tổng số tiền (cost_usd) đã tiêu trong ngày.
+> 2. Lọc và tìm kiếm dễ dàng theo cấu trúc (ví dụ: truy vấn tất cả các request có `user_id` là "sv-test" để phân tích).
 
 ---
 
@@ -58,7 +61,8 @@ Sửa một ký tự trong `app/main.py` rồi build lại. Với Dockerfile c�
 layer nào được dùng lại từ cache, layer nào phải chạy lại? Nếu bạn đặt
 `COPY . .` lên trước `RUN pip install` thì kết quả khác thế nào?
 
-> *Câu trả lời của bạn*
+> - Khi sửa một ký tự trong `app/main.py` rồi build lại, các layer ở trên (cài hệ điều hành, copy requirements.txt, chạy `pip install`) sẽ **được dùng lại từ cache**. Lệnh `COPY . .` và các lệnh theo sau (như `CMD`) sẽ **phải chạy lại**.
+> - Nếu đặt `COPY . .` lên trước `RUN pip install`, chỉ cần sửa một dòng code nhỏ trong `main.py`, lệnh `COPY . .` sẽ làm vỡ cache ở đó, kéo theo lệnh `RUN pip install` tốn thời gian cực kỳ lãng phí cũng phải chạy lại toàn bộ dù danh sách thư viện không hề thay đổi.
 
 ---
 
@@ -68,7 +72,8 @@ Container mặc định chạy bằng root. Mô tả chuỗi sự kiện dẫn t
 trong code Python của bạn" tới "kẻ tấn công có quyền cao trên máy host", và
 lệnh `USER` cắt đứt chuỗi đó ở chỗ nào.
 
-> *Câu trả lời của bạn*
+> - Lỗ hổng trong code Python (ví dụ: lỗi cho phép người dùng truyền tham số độc để thực thi shell) -> Kẻ tấn công chạy được lệnh bash bằng quyền của tiến trình Python (quyền root) -> Chúng dùng quyền root đó chỉnh sửa file hệ thống trong container, tải mã độc, cài backdoor, thậm chí leo thang khai thác ra ngoài hệ điều hành máy host.
+> - Lệnh `USER appuser` cắt đứt chuỗi này ngay tại lúc tiến trình Python chạy: dù kẻ tấn công có chiếm được tiến trình, chúng cũng chỉ có quyền của một user cấp thấp, không thể động vào các file hệ thống hay điều khiển server sâu hơn.
 
 ---
 
@@ -79,7 +84,8 @@ phút đồng hồ (reset lúc giây 00), một người dùng có thể gửi t
 request trong 2 giây liên tiếp khi hạn mức là 10/phút? Giải thích cách đạt được
 con số đó.
 
-> *Câu trả lời của bạn*
+> - Có thể gửi tối đa 20 request trong 2 giây liên tiếp.
+> - Giải thích: Họ gửi 10 request lúc 00:59 (thuộc về phút trước). Vừa bước sang giây 00:00 của phút tiếp theo, bộ đếm (đếm theo phút đồng hồ) lập tức bị reset về 0. Họ liền gửi bồi thêm 10 request nữa lúc 00:00. Tổng cộng chỉ trong 2 giây (00:59 - 00:00) họ đã ném vào hệ thống 20 request, lách luật thành công (bursting). Dùng Sliding Window (cửa sổ trượt) sẽ dập tắt được mánh khóe này.
 
 ---
 
@@ -124,4 +130,6 @@ Ghi lại **một** lỗi bạn gặp khi deploy lên cloud (build fail, health 
 timeout, sai REDIS_URL, app không đọc `$PORT`...): thông báo lỗi là gì, bạn
 tìm ra nguyên nhân bằng cách nào, và sửa ra sao?
 
-> *Câu trả lời của bạn*
+> Bị lỗi 500 Internal Server Error khi gọi endpoint `/ready` sau khi deploy lên Railway.
+> - **Tìm ra nguyên nhân:** Mình quan sát thấy API trả về mã HTTP 500 thay vì 503 (báo Redis sập). Chớp lấy manh mối đó, mình nhận ra app đã bị crash ngay từ khâu cấu hình URL Redis ban đầu (hàm `redis.from_url` không đọc được chuỗi cấu hình). 
+> - **Sửa lỗi:** Lỗi do khi thêm biến môi trường trên Railway, mình đã tạo nhầm một chuỗi cấu hình có dư tận 2 cặp ngoặc `${{${{day12-redis.REDIS_URL}}`. Mình đã lên trang Railway, sửa biến thành đúng `${{day12-redis.REDIS_URL}}`. Kết quả /ready lập tức trả về 200 {"status":"ready","redis":true}.
