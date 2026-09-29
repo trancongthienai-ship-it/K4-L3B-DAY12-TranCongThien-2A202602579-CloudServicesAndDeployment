@@ -42,12 +42,13 @@ docker images | grep agent
 
 | Bản | Dung lượng |
 |-----|-----------|
-| 1 stage (bản đầu) | ... MB |
-| Multi-stage | ... MB |
+| 1 stage (bản đầu) | ~1000 MB |
+| Multi-stage | 271 MB |
 
 Giải thích: phần dung lượng chênh lệch đó là những gì?
 
-> *Câu trả lời của bạn*
+> Phần dung lượng chênh lệch (giảm đi hơn 700MB) bao gồm các công cụ biên dịch (C++ compiler, các gói build-essential), các file bộ nhớ đệm (cache/tạm) sinh ra trong quá trình chạy `pip install`, và nhân hệ điều hành cồng kềnh của base image `python:3.11`. 
+> Bằng cách sử dụng Multi-stage, chúng ta chỉ lấy đúng KẾT QUẢ sau khi cài đặt (các thư viện đã build xong) copy sang một image hoàn toàn mới và cực kỳ tinh gọn (`python:3.11-slim`), nên vứt bỏ được toàn bộ phần rác và các công cụ thừa thải không cần thiết cho lúc chạy thực tế (runtime).
 
 ---
 
@@ -87,7 +88,9 @@ con số đó.
 Hai cơ chế này khác nhau ở điểm nào? Cho một tình huống mà rate limit cho qua
 nhưng cost guard phải chặn, và một tình huống ngược lại.
 
-> *Câu trả lời của bạn*
+> - **Sự khác nhau:** Rate Limit giới hạn **tần suất (số lượng) request** trong một khoảng thời gian ngắn (ví dụ: mỗi phút) để chống spam, chống nghẽn server. Cost Guard giới hạn **tổng chi phí (số tiền/token)** trong một khoảng thời gian dài (theo tháng) để bảo vệ túi tiền của bạn.
+> - **Tình huống Rate Limit cho qua nhưng Cost Guard chặn:** Bạn gửi duy nhất 1 request trong 1 phút (Rate limit cho qua), nhưng request đó chứa một câu hỏi siêu dài tốn tận 11 đô (vượt quá ngân sách 10 đô/tháng). Cost Guard sẽ chặn không cho gọi LLM.
+> - **Tình huống ngược lại (Rate Limit chặn, Cost Guard cho qua):** Đầu tháng bạn chưa tiêu đồng nào (Cost Guard cho qua), nhưng bạn lỡ tay cho chạy vòng lặp gửi tới 100 request trong cùng 1 giây. Rate Limit sẽ chặn ngay lập tức để bảo vệ server khỏi bị quá tải.
 
 ---
 
@@ -96,7 +99,10 @@ nhưng cost guard phải chặn, và một tình huống ngược lại.
 Nếu gộp hai endpoint làm một và cho nó kiểm tra Redis, chuyện gì xảy ra với cụm
 3 container khi Redis mất kết nối 30 giây? Trả lời theo đúng thứ tự sự kiện.
 
-> *Câu trả lời của bạn*
+> - 1. Khi Redis mất kết nối 30 giây, hàm ping tới Redis sẽ báo lỗi.
+> - 2. Do bị gộp chung, `/health` của cả 3 container sẽ đồng loạt trả về lỗi 503.
+> - 3. Orchestrator (K8s, Railway...) gọi `/health` thấy lỗi liền nghĩ rằng tiến trình Python đã bị "treo/đơ", nên nó nhẫn tâm gửi tín hiệu SIGKILL để khởi động lại (restart) cả 3 container cùng lúc.
+> - 4. Kết quả: Toàn bộ hệ thống bị sập (downtime). Người dùng đang sử dụng bị văng lỗi. Nếu tách riêng `/ready`, hệ thống chỉ tạm dừng nhận khách mới chứ không tự giết chết chính mình.
 
 ---
 
@@ -106,7 +112,9 @@ Chạy `docker compose up --scale agent=3` rồi gọi `/ask` nhiều lần vớ
 `X-User-Id`. Quan sát `history_length` trong response. Nếu lịch sử được lưu
 trong một dict Python thay vì Redis, bạn sẽ thấy con số đó thay đổi thế nào?
 
-> *Câu trả lời của bạn*
+> Nếu lưu bằng dict Python (trên RAM), 3 container sẽ có 3 vùng nhớ riêng rẽ. Khi bạn gọi `/ask` liên tục, Load Balancer sẽ đẩy request xoay vòng ngẫu nhiên vào máy A, máy B, hoặc máy C.
+> 
+> Hậu quả là `history_length` sẽ nhảy lung tung rải rác (ví dụ: request 1 nhảy vào máy A trả về length 1, request 2 nhảy vào máy B trả về length 1, request 3 lại quay về máy A thì length mới lên 2). Kéo theo đó, AI sẽ bị "mất trí nhớ" hoặc bị chập cheng vì không đọc được toàn bộ ngữ cảnh trước đó. Lưu tập trung bằng Redis sẽ giải quyết hoàn toàn việc này.
 
 ---
 
